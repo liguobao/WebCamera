@@ -180,7 +180,8 @@ html, body {
 video {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  /* 使用 cover 填充容器以避免取景框黑边（会裁剪画面以保持充满） */
+  object-fit: cover;
   display: block;
   transform: scaleX(-1);
 }
@@ -343,26 +344,7 @@ video {
   font-weight: 500;
 }
 
-.info-sub {
-  display: block;
-  font-size: 0.75rem;
-  color: var(--text-dimmed);
-  margin-top: 4px;
-}
-
-.scan-btn {
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-input);
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.85rem;
-}
-.scan-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
+/* debug styles removed */
 
 /* ========== Footer ========== */
 .footer {
@@ -404,7 +386,7 @@ video {
 }
 
 .video-container:fullscreen video {
-  object-fit: contain;
+  object-fit: cover;
 }
 
 /* ========== Responsive ========== */
