@@ -6,7 +6,6 @@ export default defineConfig({
   base: '/WebCamera/',
   build: {
     outDir: 'dist',
-    minify: 'terser',
     sourcemap: false
   }
 })

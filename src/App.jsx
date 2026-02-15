@@ -58,16 +58,17 @@ function App() {
   const themeTitle = themeMode === 'auto' ? '主题: 跟随系统' : themeMode === 'light' ? '主题: 浅色' : '主题: 深色'
 
   // 构建高分辨率约束
-  const buildConstraints = (deviceId) => ({
-    video: {
-      deviceId: deviceId ? { exact: deviceId } : undefined,
-      width: { ideal: 4096 },
-      height: { ideal: 2160 },
-      frameRate: { ideal: 60 },
-      facingMode: deviceId ? undefined : 'environment'
-    },
-    audio: false
-  })
+  const buildConstraints = (deviceId) => {
+    const video = {
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 30 }
+    }
+    if (deviceId) {
+      video.deviceId = { exact: deviceId }
+    }
+    return { video, audio: false }
+  }
 
   // 应用流到 video 并更新信息
   const applyStream = (newStream) => {
