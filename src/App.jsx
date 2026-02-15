@@ -15,6 +15,8 @@ function App() {
   const [devices, setDevices] = useState([])
   const [selectedDevice, setSelectedDevice] = useState('')
   const [cameraInfo, setCameraInfo] = useState(null)
+  const [scanResults, setScanResults] = useState([])
+  const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
   const [isStarted, setIsStarted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -137,6 +139,46 @@ function App() {
       actualWidth: video.videoWidth,
       actualHeight: video.videoHeight
     }))
+  }
+
+  // 扫描一组候选分辨率，记录实际被浏览器/摄像头接受的分辨率
+  const scanResolutions = async () => {
+    if (!navigator.mediaDevices || scanning) return
+    setScanning(true)
+    const deviceId = selectedDevice || (cameraInfo && cameraInfo.deviceId)
+    const candidates = [
+      [1920, 1080],
+      [1600, 1200],
+      [1552, 1552],
+      [1536, 1536],
+      [1280, 720],
+      [1024, 768],
+      [800, 600],
+      [640, 480]
+    ]
+    const results = []
+    for (const [w, h] of candidates) {
+      try {
+        const constraints = {
+          video: {
+            deviceId: deviceId ? { exact: deviceId } : undefined,
+            width: { exact: w },
+            height: { exact: h }
+          },
+          audio: false
+        }
+        const s = await navigator.mediaDevices.getUserMedia(constraints)
+        const t = s.getVideoTracks()[0]
+        const st = t.getSettings()
+        results.push({ requested: `${w}x${h}`, actual: `${st.width || '?'}x${st.height || '?'}`, settings: st })
+        s.getTracks().forEach(tr => tr.stop())
+        await new Promise(r => setTimeout(r, 200))
+      } catch (err) {
+        results.push({ requested: `${w}x${h}`, error: err.message })
+      }
+    }
+    setScanResults(results)
+    setScanning(false)
   }
 
   // 启动摄像头 - 自动使用最大分辨率
@@ -549,6 +591,23 @@ function App() {
                     高: {cameraInfo.capabilities.height?.min || '-'} → {cameraInfo.capabilities.height?.max || '-'};
                     帧率: {cameraInfo.capabilities.frameRate?.min || '-'} → {cameraInfo.capabilities.frameRate?.max || '-'}
                   </span>
+                  <div style={{marginTop:8}}>
+                    <button className="scan-btn" onClick={scanResolutions} disabled={scanning}>
+                      {scanning ? '正在检测…' : '检测可用分辨率'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {scanResults.length > 0 && (
+                <div className="info-row" style={{gridColumn: '1 / -1'}}>
+                  <span className="info-label">扫描结果</span>
+                  <div className="info-value" style={{display:'block'}}>
+                    {scanResults.map((r, i) => (
+                      <div key={i} style={{fontSize: '0.85rem', color: 'var(--text-dimmed)'}}>
+                        {r.requested} → {r.error ? `错误: ${r.error}` : r.actual}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

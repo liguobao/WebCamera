@@ -350,6 +350,20 @@ video {
   margin-top: 4px;
 }
 
+.scan-btn {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-input);
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.scan-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ========== Footer ========== */
 .footer {
   flex-shrink: 0;
