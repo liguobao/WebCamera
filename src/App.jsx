@@ -57,17 +57,47 @@ function App() {
   const themeLabel = themeMode === 'auto' ? 'A' : themeMode === 'light' ? 'L' : 'D'
   const themeTitle = themeMode === 'auto' ? '主题: 跟随系统' : themeMode === 'light' ? '主题: 浅色' : '主题: 深色'
 
-  // 构建高分辨率约束
-  const buildConstraints = (deviceId) => {
-    const video = {
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-      frameRate: { ideal: 30 }
+  // 查询摄像头支持的最大分辨率，并用该分辨率打开
+  const openWithMaxResolution = async (deviceId) => {
+    // 先用基础约束打开，获取 track 的能力信息
+    const basicConstraints = { video: deviceId ? { deviceId: { exact: deviceId } } : true }
+    const probeStream = await navigator.mediaDevices.getUserMedia(basicConstraints)
+    const track = probeStream.getVideoTracks()[0]
+
+    let maxWidth = 1920
+    let maxHeight = 1080
+    let maxFps = 30
+
+    // getCapabilities 返回摄像头硬件支持的范围
+    if (track.getCapabilities) {
+      const caps = track.getCapabilities()
+      if (caps.width?.max) maxWidth = caps.width.max
+      if (caps.height?.max) maxHeight = caps.height.max
+      if (caps.frameRate?.max) maxFps = Math.min(caps.frameRate.max, 60)
     }
-    if (deviceId) {
-      video.deviceId = { exact: deviceId }
+
+    // 尝试用 applyConstraints 直接切换到最大分辨率
+    try {
+      await track.applyConstraints({
+        width: { ideal: maxWidth },
+        height: { ideal: maxHeight },
+        frameRate: { ideal: maxFps }
+      })
+      // applyConstraints 成功，直接使用这个流
+      return probeStream
+    } catch {
+      // applyConstraints 失败，关闭探测流，重新用最大分辨率约束打开
+      probeStream.getTracks().forEach(t => t.stop())
+      await new Promise(r => setTimeout(r, 100))
+
+      const video = {
+        width: { ideal: maxWidth },
+        height: { ideal: maxHeight },
+        frameRate: { ideal: maxFps }
+      }
+      if (deviceId) video.deviceId = { exact: deviceId }
+      return await navigator.mediaDevices.getUserMedia({ video, audio: false })
     }
-    return { video, audio: false }
   }
 
   // 应用流到 video 并更新信息
@@ -89,17 +119,16 @@ function App() {
     setIsStarted(true)
   }
 
-  // 启动摄像头 - 使用最高分辨率和帧率
+  // 启动摄像头 - 自动使用最大分辨率
   const startCamera = async (deviceId) => {
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
         streamRef.current = null
       }
-      // 短暂等待确保摄像头完全释放
       await new Promise(r => setTimeout(r, 100))
 
-      const newStream = await navigator.mediaDevices.getUserMedia(buildConstraints(deviceId))
+      const newStream = await openWithMaxResolution(deviceId)
       applyStream(newStream)
     } catch (err) {
       setError('无法访问摄像头: ' + err.message)
@@ -110,17 +139,13 @@ function App() {
   // 获取摄像头设备列表并启动
   const initCamera = async () => {
     try {
-      // 直接用高分辨率约束请求，一步到位获取权限+高清流
-      const firstStream = await navigator.mediaDevices.getUserMedia(
-        buildConstraints(undefined)
-      )
+      const firstStream = await openWithMaxResolution(undefined)
 
       // 拿到权限后枚举设备
       const deviceList = await navigator.mediaDevices.enumerateDevices()
       const videoDevices = deviceList.filter(device => device.kind === 'videoinput')
       setDevices(videoDevices)
 
-      // 直接使用这个流，不再重新打开
       const currentDeviceId = firstStream.getVideoTracks()[0]?.getSettings()?.deviceId
       if (currentDeviceId) {
         setSelectedDevice(currentDeviceId)
