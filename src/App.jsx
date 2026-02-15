@@ -57,44 +57,49 @@ function App() {
   const themeLabel = themeMode === 'auto' ? 'A' : themeMode === 'light' ? 'L' : 'D'
   const themeTitle = themeMode === 'auto' ? '主题: 跟随系统' : themeMode === 'light' ? '主题: 浅色' : '主题: 深色'
 
+  // 构建高分辨率约束
+  const buildConstraints = (deviceId) => ({
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      width: { ideal: 4096 },
+      height: { ideal: 2160 },
+      frameRate: { ideal: 60 },
+      facingMode: deviceId ? undefined : 'environment'
+    },
+    audio: false
+  })
+
+  // 应用流到 video 并更新信息
+  const applyStream = (newStream) => {
+    streamRef.current = newStream
+    if (videoRef.current) {
+      videoRef.current.srcObject = newStream
+    }
+    const track = newStream.getVideoTracks()[0]
+    const settings = track.getSettings()
+    setCameraInfo({
+      width: settings.width,
+      height: settings.height,
+      frameRate: settings.frameRate,
+      deviceLabel: track.label || '摄像头',
+      deviceId: settings.deviceId
+    })
+    setError('')
+    setIsStarted(true)
+  }
+
   // 启动摄像头 - 使用最高分辨率和帧率
   const startCamera = async (deviceId) => {
     try {
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop())
+        streamRef.current = null
       }
+      // 短暂等待确保摄像头完全释放
+      await new Promise(r => setTimeout(r, 100))
 
-      const constraints = {
-        video: {
-          deviceId: deviceId ? { exact: deviceId } : undefined,
-          width: { ideal: 4096 },
-          height: { ideal: 2160 },
-          frameRate: { ideal: 60 },
-          facingMode: deviceId ? undefined : 'environment'
-        },
-        audio: false
-      }
-
-      const newStream = await navigator.mediaDevices.getUserMedia(constraints)
-      streamRef.current = newStream
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = newStream
-      }
-
-      const track = newStream.getVideoTracks()[0]
-      const settings = track.getSettings()
-
-      setCameraInfo({
-        width: settings.width,
-        height: settings.height,
-        frameRate: settings.frameRate,
-        deviceLabel: track.label || '摄像头',
-        deviceId: settings.deviceId
-      })
-
-      setError('')
-      setIsStarted(true)
+      const newStream = await navigator.mediaDevices.getUserMedia(buildConstraints(deviceId))
+      applyStream(newStream)
     } catch (err) {
       setError('无法访问摄像头: ' + err.message)
       setIsStarted(false)
@@ -104,19 +109,22 @@ function App() {
   // 获取摄像头设备列表并启动
   const initCamera = async () => {
     try {
-      // 先请求权限，拿到流后立即关闭，避免占用摄像头导致后续无法切换高分辨率
-      const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true })
-      permissionStream.getTracks().forEach(track => track.stop())
+      // 直接用高分辨率约束请求，一步到位获取权限+高清流
+      const firstStream = await navigator.mediaDevices.getUserMedia(
+        buildConstraints(undefined)
+      )
 
+      // 拿到权限后枚举设备
       const deviceList = await navigator.mediaDevices.enumerateDevices()
       const videoDevices = deviceList.filter(device => device.kind === 'videoinput')
       setDevices(videoDevices)
 
-      if (videoDevices.length > 0) {
-        const defaultDevice = videoDevices[0].deviceId
-        setSelectedDevice(defaultDevice)
-        await startCamera(defaultDevice)
+      // 直接使用这个流，不再重新打开
+      const currentDeviceId = firstStream.getVideoTracks()[0]?.getSettings()?.deviceId
+      if (currentDeviceId) {
+        setSelectedDevice(currentDeviceId)
       }
+      applyStream(firstStream)
     } catch (err) {
       setError('无法获取设备列表: ' + err.message)
     }
@@ -390,7 +398,20 @@ function App() {
                 className="fullscreen-btn"
                 title="全屏 (F)"
               >
-                {isFullscreen ? 'X' : '[ ]'}
+                {isFullscreen
+                  ? <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="4 14 4 20 10 20"/>
+                      <polyline points="20 10 20 4 14 4"/>
+                      <line x1="14" y1="10" x2="20" y2="4"/>
+                      <line x1="4" y1="20" x2="10" y2="14"/>
+                    </svg>
+                  : <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="15 3 21 3 21 9"/>
+                      <polyline points="9 21 3 21 3 15"/>
+                      <line x1="21" y1="3" x2="14" y2="10"/>
+                      <line x1="3" y1="21" x2="10" y2="14"/>
+                    </svg>
+                }
               </button>
             )}
 
