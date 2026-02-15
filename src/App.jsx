@@ -104,7 +104,9 @@ function App() {
   // 获取摄像头设备列表并启动
   const initCamera = async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({ video: true })
+      // 先请求权限，拿到流后立即关闭，避免占用摄像头导致后续无法切换高分辨率
+      const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true })
+      permissionStream.getTracks().forEach(track => track.stop())
 
       const deviceList = await navigator.mediaDevices.enumerateDevices()
       const videoDevices = deviceList.filter(device => device.kind === 'videoinput')
