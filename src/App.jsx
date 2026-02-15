@@ -15,8 +15,6 @@ function App() {
   const [devices, setDevices] = useState([])
   const [selectedDevice, setSelectedDevice] = useState('')
   const [cameraInfo, setCameraInfo] = useState(null)
-  const [scanResults, setScanResults] = useState([])
-  const [scanning, setScanning] = useState(false)
   const [error, setError] = useState('')
   const [isStarted, setIsStarted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -71,42 +69,74 @@ function App() {
     let maxHeight = 1080
     let maxFps = 30
 
-    if (track.getCapabilities) {
-      const caps = track.getCapabilities()
+    const caps = track.getCapabilities ? track.getCapabilities() : null
+    if (caps) {
       if (caps.width?.max) maxWidth = caps.width.max
       if (caps.height?.max) maxHeight = caps.height.max
       if (caps.frameRate?.max) maxFps = Math.min(caps.frameRate.max, 60)
     }
 
-    // 第二步：关闭探测流，释放摄像头
+    // 关闭探测流，释放摄像头
     probeStream.getTracks().forEach(t => t.stop())
     await new Promise(r => setTimeout(r, 200))
 
-    // 第三步：用查到的最大分辨率重新打开
-    const finalConstraints = {
-      video: {
-        deviceId: { exact: probedDeviceId },
-        width: { exact: maxWidth },
-        height: { exact: maxHeight },
-        frameRate: { ideal: maxFps }
-      },
-      audio: false
+    // 优先按常见纵横比尝试（16:9, 4:3, 1），并在失败时尝试宽高互换
+    const aspects = [16 / 9, 4 / 3, 1]
+    const tried = []
+
+    const tryOpen = async (w, h) => {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: probedDeviceId },
+            width: { exact: w },
+            height: { exact: h },
+            frameRate: { ideal: maxFps }
+          },
+          audio: false
+        })
+        return s
+      } catch (e) {
+        return null
+      }
     }
 
-    try {
-      return await navigator.mediaDevices.getUserMedia(finalConstraints)
-    } catch {
-      // exact 失败时回退到 ideal
-      return await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: { exact: probedDeviceId },
-          width: { ideal: maxWidth },
-          height: { ideal: maxHeight },
-          frameRate: { ideal: maxFps }
-        },
-        audio: false
-      })
+    for (const a of aspects) {
+      // 基于 maxHeight 计算宽度，确保不超过 maxWidth
+      let w = Math.min(maxWidth, Math.round(maxHeight * a))
+      let h = Math.round(w / a)
+      if (w < 1 || h < 1) continue
+      tried.push([w, h])
+
+      // 尝试横向优先
+      const s1 = await tryOpen(w, h)
+      if (s1) return s1
+
+      // 尝试互换（处理传感器方向差异）
+      const s2 = await tryOpen(h, w)
+      if (s2) return s2
     }
+
+    // 若 exact 均失败，尝试使用 ideal 回退到浏览器选择
+    for (const [w, h] of tried) {
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: probedDeviceId },
+            width: { ideal: w },
+            height: { ideal: h },
+            frameRate: { ideal: maxFps }
+          },
+          audio: false
+        })
+        return s
+      } catch (e) {
+        // continue
+      }
+    }
+
+    // 最后退回到只指定设备 id 的默认打开方式
+    return await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: probedDeviceId } }, audio: false })
   }
 
   // 应用流到 video 并更新信息
@@ -117,69 +147,21 @@ function App() {
     }
     const track = newStream.getVideoTracks()[0]
     const settings = track.getSettings()
-    const capabilities = track.getCapabilities ? track.getCapabilities() : null
     setCameraInfo({
       width: settings.width,
       height: settings.height,
       frameRate: settings.frameRate,
       deviceLabel: track.label || '摄像头',
       deviceId: settings.deviceId
-      ,capabilities: capabilities
     })
     setError('')
     setIsStarted(true)
   }
 
   // 当 video 元数据加载后，记录实际像素尺寸（videoWidth/videoHeight）
-  const handleLoadedMetadata = () => {
-    const video = videoRef.current
-    if (!video) return
-    setCameraInfo(prev => ({
-      ...prev,
-      actualWidth: video.videoWidth,
-      actualHeight: video.videoHeight
-    }))
-  }
+  // removed debug: do not keep onLoadedMetadata/actual size in production
 
-  // 扫描一组候选分辨率，记录实际被浏览器/摄像头接受的分辨率
-  const scanResolutions = async () => {
-    if (!navigator.mediaDevices || scanning) return
-    setScanning(true)
-    const deviceId = selectedDevice || (cameraInfo && cameraInfo.deviceId)
-    const candidates = [
-      [1920, 1080],
-      [1600, 1200],
-      [1552, 1552],
-      [1536, 1536],
-      [1280, 720],
-      [1024, 768],
-      [800, 600],
-      [640, 480]
-    ]
-    const results = []
-    for (const [w, h] of candidates) {
-      try {
-        const constraints = {
-          video: {
-            deviceId: deviceId ? { exact: deviceId } : undefined,
-            width: { exact: w },
-            height: { exact: h }
-          },
-          audio: false
-        }
-        const s = await navigator.mediaDevices.getUserMedia(constraints)
-        const t = s.getVideoTracks()[0]
-        const st = t.getSettings()
-        results.push({ requested: `${w}x${h}`, actual: `${st.width || '?'}x${st.height || '?'}`, settings: st })
-        s.getTracks().forEach(tr => tr.stop())
-        await new Promise(r => setTimeout(r, 200))
-      } catch (err) {
-        results.push({ requested: `${w}x${h}`, error: err.message })
-      }
-    }
-    setScanResults(results)
-    setScanning(false)
-  }
+  // debug scan removed
 
   // 启动摄像头 - 自动使用最大分辨率
   const startCamera = async (deviceId) => {
@@ -502,7 +484,6 @@ function App() {
               autoPlay
               playsInline
               muted
-              onLoadedMetadata={handleLoadedMetadata}
             />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
 
@@ -571,9 +552,6 @@ function App() {
               <div className="info-row">
                 <span className="info-label">分辨率</span>
                 <span className="info-value">{cameraInfo.width || 'N/A'} x {cameraInfo.height || 'N/A'}</span>
-                {cameraInfo.actualWidth && (
-                  <small className="info-sub">实际: {cameraInfo.actualWidth} x {cameraInfo.actualHeight}</small>
-                )}
               </div>
               <div className="info-row">
                 <span className="info-label">帧率</span>
@@ -583,33 +561,6 @@ function App() {
                 <span className="info-label">设备</span>
                 <span className="info-value">{cameraInfo.deviceLabel}</span>
               </div>
-              {cameraInfo.capabilities && (
-                <div className="info-row" style={{gridColumn: '1 / -1'}}>
-                  <span className="info-label">能力范围</span>
-                  <span className="info-value">
-                    宽: {cameraInfo.capabilities.width?.min || '-'} → {cameraInfo.capabilities.width?.max || '-'};
-                    高: {cameraInfo.capabilities.height?.min || '-'} → {cameraInfo.capabilities.height?.max || '-'};
-                    帧率: {cameraInfo.capabilities.frameRate?.min || '-'} → {cameraInfo.capabilities.frameRate?.max || '-'}
-                  </span>
-                  <div style={{marginTop:8}}>
-                    <button className="scan-btn" onClick={scanResolutions} disabled={scanning}>
-                      {scanning ? '正在检测…' : '检测可用分辨率'}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {scanResults.length > 0 && (
-                <div className="info-row" style={{gridColumn: '1 / -1'}}>
-                  <span className="info-label">扫描结果</span>
-                  <div className="info-value" style={{display:'block'}}>
-                    {scanResults.map((r, i) => (
-                      <div key={i} style={{fontSize: '0.85rem', color: 'var(--text-dimmed)'}}>
-                        {r.requested} → {r.error ? `错误: ${r.error}` : r.actual}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </div>
