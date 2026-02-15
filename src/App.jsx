@@ -57,18 +57,18 @@ function App() {
   const themeLabel = themeMode === 'auto' ? 'A' : themeMode === 'light' ? 'L' : 'D'
   const themeTitle = themeMode === 'auto' ? '主题: 跟随系统' : themeMode === 'light' ? '主题: 浅色' : '主题: 深色'
 
-  // 查询摄像头支持的最大分辨率，并用该分辨率打开
+  // 查询摄像头支持的最大分辨率，关闭探测流后重新用最大分辨率打开
   const openWithMaxResolution = async (deviceId) => {
-    // 先用基础约束打开，获取 track 的能力信息
+    // 第一步：用基础约束打开，仅用于查询硬件能力
     const basicConstraints = { video: deviceId ? { deviceId: { exact: deviceId } } : true }
     const probeStream = await navigator.mediaDevices.getUserMedia(basicConstraints)
     const track = probeStream.getVideoTracks()[0]
+    const probedDeviceId = track.getSettings().deviceId
 
     let maxWidth = 1920
     let maxHeight = 1080
     let maxFps = 30
 
-    // getCapabilities 返回摄像头硬件支持的范围
     if (track.getCapabilities) {
       const caps = track.getCapabilities()
       if (caps.width?.max) maxWidth = caps.width.max
@@ -76,27 +76,34 @@ function App() {
       if (caps.frameRate?.max) maxFps = Math.min(caps.frameRate.max, 60)
     }
 
-    // 尝试用 applyConstraints 直接切换到最大分辨率
-    try {
-      await track.applyConstraints({
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
-        frameRate: { ideal: maxFps }
-      })
-      // applyConstraints 成功，直接使用这个流
-      return probeStream
-    } catch {
-      // applyConstraints 失败，关闭探测流，重新用最大分辨率约束打开
-      probeStream.getTracks().forEach(t => t.stop())
-      await new Promise(r => setTimeout(r, 100))
+    // 第二步：关闭探测流，释放摄像头
+    probeStream.getTracks().forEach(t => t.stop())
+    await new Promise(r => setTimeout(r, 200))
 
-      const video = {
-        width: { ideal: maxWidth },
-        height: { ideal: maxHeight },
+    // 第三步：用查到的最大分辨率重新打开
+    const finalConstraints = {
+      video: {
+        deviceId: { exact: probedDeviceId },
+        width: { exact: maxWidth },
+        height: { exact: maxHeight },
         frameRate: { ideal: maxFps }
-      }
-      if (deviceId) video.deviceId = { exact: deviceId }
-      return await navigator.mediaDevices.getUserMedia({ video, audio: false })
+      },
+      audio: false
+    }
+
+    try {
+      return await navigator.mediaDevices.getUserMedia(finalConstraints)
+    } catch {
+      // exact 失败时回退到 ideal
+      return await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: probedDeviceId },
+          width: { ideal: maxWidth },
+          height: { ideal: maxHeight },
+          frameRate: { ideal: maxFps }
+        },
+        audio: false
+      })
     }
   }
 
