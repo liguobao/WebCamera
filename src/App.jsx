@@ -115,15 +115,28 @@ function App() {
     }
     const track = newStream.getVideoTracks()[0]
     const settings = track.getSettings()
+    const capabilities = track.getCapabilities ? track.getCapabilities() : null
     setCameraInfo({
       width: settings.width,
       height: settings.height,
       frameRate: settings.frameRate,
       deviceLabel: track.label || '摄像头',
       deviceId: settings.deviceId
+      ,capabilities: capabilities
     })
     setError('')
     setIsStarted(true)
+  }
+
+  // 当 video 元数据加载后，记录实际像素尺寸（videoWidth/videoHeight）
+  const handleLoadedMetadata = () => {
+    const video = videoRef.current
+    if (!video) return
+    setCameraInfo(prev => ({
+      ...prev,
+      actualWidth: video.videoWidth,
+      actualHeight: video.videoHeight
+    }))
   }
 
   // 启动摄像头 - 自动使用最大分辨率
@@ -447,6 +460,7 @@ function App() {
               autoPlay
               playsInline
               muted
+              onLoadedMetadata={handleLoadedMetadata}
             />
             <canvas ref={canvasRef} style={{ display: 'none' }} />
 
@@ -514,7 +528,10 @@ function App() {
             <div className="info-panel">
               <div className="info-row">
                 <span className="info-label">分辨率</span>
-                <span className="info-value">{cameraInfo.width} x {cameraInfo.height}</span>
+                <span className="info-value">{cameraInfo.width || 'N/A'} x {cameraInfo.height || 'N/A'}</span>
+                {cameraInfo.actualWidth && (
+                  <small className="info-sub">实际: {cameraInfo.actualWidth} x {cameraInfo.actualHeight}</small>
+                )}
               </div>
               <div className="info-row">
                 <span className="info-label">帧率</span>
@@ -524,6 +541,16 @@ function App() {
                 <span className="info-label">设备</span>
                 <span className="info-value">{cameraInfo.deviceLabel}</span>
               </div>
+              {cameraInfo.capabilities && (
+                <div className="info-row" style={{gridColumn: '1 / -1'}}>
+                  <span className="info-label">能力范围</span>
+                  <span className="info-value">
+                    宽: {cameraInfo.capabilities.width?.min || '-'} → {cameraInfo.capabilities.width?.max || '-'};
+                    高: {cameraInfo.capabilities.height?.min || '-'} → {cameraInfo.capabilities.height?.max || '-'};
+                    帧率: {cameraInfo.capabilities.frameRate?.min || '-'} → {cameraInfo.capabilities.frameRate?.max || '-'}
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>

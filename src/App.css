@@ -343,6 +343,13 @@ video {
   font-weight: 500;
 }
 
+.info-sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-dimmed);
+  margin-top: 4px;
+}
+
 /* ========== Footer ========== */
 .footer {
   flex-shrink: 0;
