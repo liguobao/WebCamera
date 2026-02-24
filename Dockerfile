@@ -7,6 +7,8 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
+ARG VITE_BASE=/
+ENV VITE_BASE=$VITE_BASE
 RUN npm run build
 
 # Stage 2: Production
